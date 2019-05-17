@@ -20,9 +20,10 @@ func EC2TagToDataSyncTag(src *ec2.Tag, dst *datasync.TagListEntry) error {
 	return nil
 }
 
-func (src *myTag) EC2Tag(dst *ec2.Tag) error {
+func (src *myTag) EC2Tag() (*ec2.Tag, error) {
+	dst := &ec2.Tag{}
 	typemapper.Map(src, dst)
-	return nil
+	return dst, nil
 }
 
 func ELBv2TagToEC2Tag(src *elbv2.Tag, dst *ec2.Tag) error {
