@@ -56,7 +56,7 @@ func mainErr() error {
 	ssapkg := prog.CreatePackage(pkg.Types, pkg.Syntax, pkg.TypesInfo, false)
 	ssapkg.Build()
 
-	// ssapkg.WriteTo(os.Stdout)
+	//ssapkg.WriteTo(os.Stdout)
 
 	g := &generator{
 		File: jen.NewFile(pkg.Name),
@@ -111,7 +111,9 @@ type generator struct {
 }
 
 func (g *generator) mapFunction(f *ssa.Function) error {
-	mapCall := findTypeMapperMapCall(f)
+	// f.WriteTo(os.Stdout)
+
+	mapCall := findTypeMapperCreateMapCall(f)
 	if mapCall == nil {
 		return nil
 	}
@@ -159,7 +161,24 @@ func (g *generator) mapFunction(f *ssa.Function) error {
 		}
 		switch inst := inst.(type) {
 		default:
-			return errors.Errorf("unexpected instruction in function body %T", inst)
+			//return errors.Errorf("unexpected instruction in function body %T", inst)
+			// ignore instruction
+		case ssa.CallInstruction:
+			if !isTypeMapperCall(inst) {
+				return errors.Errorf("unexpected call in function body %T", inst)
+			}
+
+			callF, ok := inst.Common().Value.(*ssa.Function)
+			if !ok {
+				return errors.Errorf("unexpected typemapper call in function body %T", inst)
+			}
+
+			switch callF.Name() {
+			default:
+				return errors.Errorf("unexpected typemapper call in function body %T", inst)
+			case "RecognizePrefixes":
+				
+			}
 		case *ssa.Return:
 			for _, res := range inst.Results {
 				switch res := res.(type) {
@@ -171,8 +190,6 @@ func (g *generator) mapFunction(f *ssa.Function) error {
 			}
 		}
 	}
-
-	// f.WriteTo(os.Stdout)
 
 	srcP, err := param(src)
 	if err != nil {
@@ -196,24 +213,37 @@ func param(v ssa.Value) (*ssa.Parameter, error) {
 	return nil, errors.Errorf("unexpected value %T %#v", v, v)
 }
 
-func findTypeMapperMapCall(f *ssa.Function) ssa.CallInstruction {
+func findTypeMapperCreateMapCall(f *ssa.Function) ssa.CallInstruction {
 	for _, b := range f.Blocks {
 		for _, inst := range b.Instrs {
 			switch inst := inst.(type) {
 			case ssa.CallInstruction:
+				if !isTypeMapperCall(inst) {
+					continue
+				}
+
 				callF, ok := inst.Common().Value.(*ssa.Function)
 				if !ok {
-					return nil
+					continue
 				}
-				if callF.Name() != "Map" {
-					return nil
-				}
-				if !strings.HasSuffix(callF.Pkg.Pkg.Path(), "github.com/paultyng/go-typemapper") {
-					return nil
+
+				if callF.Name() != "CreateMap" {
+					continue
 				}
 				return inst
 			}
 		}
 	}
 	return nil
+}
+
+func isTypeMapperCall(inst ssa.CallInstruction) bool {
+	callF, ok := inst.Common().Value.(*ssa.Function)
+	if !ok {
+		return false
+	}
+	if !strings.HasSuffix(callF.Pkg.Pkg.Path(), "github.com/paultyng/go-typemapper") {
+		return false
+	}
+	return true
 }

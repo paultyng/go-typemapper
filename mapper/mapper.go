@@ -17,7 +17,9 @@ func Map(src, dst types.Type) (MapConfiguration, error) {
 	structSrc := unwrapPointer(src).(*types.Named).Underlying().(*types.Struct)
 	structDst := unwrapPointer(dst).(*types.Named).Underlying().(*types.Struct)
 
-	sm := &structMapper{}
+	sm := &structMapper{
+		prefix: "Service",
+	}
 
 	config := sm.Map(structSrc, structDst)
 

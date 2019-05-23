@@ -1,8 +1,13 @@
 package mapper
 
-import "go/types"
+import (
+	"strings"
+	"go/types"
+)
 
 type structMapper struct {
+	//TODO: multiple...
+	prefix string
 }
 
 func (m *structMapper) TypesMappable(src, dst types.Type) bool {
@@ -23,8 +28,39 @@ func (m *structMapper) TypesMappable(src, dst types.Type) bool {
 }
 
 func (m *structMapper) FieldsMappable(src, dst *types.Var) bool {
+	srcNames := []string{src.Name()}
+	dstNames := []string{dst.Name()}
+
+	if m.prefix != "" {
+		if strings.HasPrefix(srcNames[0], m.prefix) {
+			srcNames = append(srcNames, strings.TrimPrefix(srcNames[0], m.prefix))
+		}
+
+		if strings.HasPrefix(dstNames[0], m.prefix) {
+			dstNames = append(dstNames, strings.TrimPrefix(dstNames[0], m.prefix))
+		}
+	}
+
 	// TODO: add options for this, casing, type conversions, etc
-	if src.Name() != dst.Name() {
+
+	matchFound := func() bool {
+		for _, dstName := range dstNames {
+			if dstName == "" {
+				continue
+			}
+			for _, srcName := range srcNames {
+				if srcName == "" {
+					continue
+				}
+				if dstName == srcName {
+					return true
+				}
+			}
+		}
+		return false
+	}()
+
+	if !matchFound {
 		return false
 	}
 

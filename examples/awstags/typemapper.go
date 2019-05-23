@@ -11,22 +11,22 @@ import (
 )
 
 func (src *myTag) DataSyncTag(dst *datasync.TagListEntry) error {
-	typemapper.Map(src, dst)
+	typemapper.CreateMap(src, dst)
 	return nil
 }
 
 func EC2TagToDataSyncTag(src *ec2.Tag, dst *datasync.TagListEntry) error {
-	typemapper.Map(src, dst)
+	typemapper.CreateMap(src, dst)
 	return nil
 }
 
 func (src *myTag) EC2Tag() (*ec2.Tag, error) {
 	dst := &ec2.Tag{}
-	typemapper.Map(src, dst)
+	typemapper.CreateMap(src, dst)
 	return dst, nil
 }
 
 func ELBv2TagToEC2Tag(src *elbv2.Tag, dst *ec2.Tag) error {
-	typemapper.Map(src, dst)
+	typemapper.CreateMap(src, dst)
 	return nil
 }
