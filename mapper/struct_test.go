@@ -25,6 +25,8 @@ func TestFindMatchingField(t *testing.T) {
 		getFooStringVar = types.NewVar(1, pkg, "GetFoo", stringType)
 
 		barIntVar = types.NewVar(4, pkg, "Bar", intType)
+
+		ignoreIntVar = types.NewVar(1, pkg, "Ignore", intType)
 	)
 
 	for i, c := range []struct {
@@ -43,14 +45,22 @@ func TestFindMatchingField(t *testing.T) {
 		{fooStringVar, types.NewStruct([]*types.Var{fooStringVar, barIntVar}, nil), types.NewStruct([]*types.Var{fooStringVar}, nil), fooStringVar},
 		{fooStringVar, types.NewStruct([]*types.Var{fooStringVar, barIntVar}, nil), types.NewStruct([]*types.Var{fooStringVar, barIntVar}, nil), fooStringVar},
 
+		// prefix tests
 		{fooStringVar, types.NewStruct([]*types.Var{fooStringVar}, nil), types.NewStruct([]*types.Var{getFooStringVar}, nil), getFooStringVar},
 		{getFooStringVar, types.NewStruct([]*types.Var{getFooStringVar}, nil), types.NewStruct([]*types.Var{fooStringVar}, nil), fooStringVar},
+
+		// ignore tests
+		{nil, types.NewStruct([]*types.Var{ignoreIntVar}, nil), types.NewStruct([]*types.Var{ignoreIntVar}, nil), ignoreIntVar},
+
+		// explicit map tests
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			sm := structMapper{
-				prefix: "Get",
-			}
-			actual := sm.FindPair(c.src, c.dst, c.dstField)
+			sm := NewStructMapper(c.src, c.dst)
+			sm.RecognizePrefixes("Get")
+			sm.IgnoreFields("Ignore")
+			sm.MapField("MapFieldSrc", "MapFieldDst")
+
+			actual := sm.findPair(c.src, c.dst, c.dstField)
 			assert.Equal(t, c.expected, actual)
 		})
 	}

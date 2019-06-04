@@ -4,24 +4,16 @@ import (
 	"go/types"
 )
 
-func unwrapPointer(v types.Type) types.Type {
-	if p, ok := v.(*types.Pointer); ok {
-		return p.Elem()
-	}
-	return v
+type FieldPair struct {
+	Source      *types.Var
+	Destination *types.Var
 }
 
-func Map(src, dst types.Type) (MapConfiguration, error) {
-	//fmt.Printf("Src %T %#v\nDst %T %#v\n", src, src, dst, dst)
+type Field struct {
+	Var *types.Var
+}
 
-	structSrc := unwrapPointer(src).(*types.Named).Underlying().(*types.Struct)
-	structDst := unwrapPointer(dst).(*types.Named).Underlying().(*types.Struct)
-
-	sm := &structMapper{
-		prefix: "Service",
-	}
-
-	config := sm.Map(structSrc, structDst)
-
-	return config, nil
+type MapConfiguration struct {
+	Pairs   []FieldPair
+	NoMatch []Field
 }

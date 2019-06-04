@@ -17,12 +17,9 @@ func isPointer(t types.Type) bool {
 	return false
 }
 
-func (g *generator) generateTypeMapping(name string, sig *types.Signature, src, dst *ssa.Parameter) error {
-	mapConfig, err := mapper.Map(src.Type(), dst.Type())
-	if err != nil {
-		return err
-	}
-
+func (g *generator) generateTypeMapping(name string, sig *types.Signature, src, dst *ssa.Parameter, m *mapper.StructMapper) error {
+	mapConfig := m.Map()
+	
 	// options are zero or one results, and if one, its `error`
 	isErrorResult := sig.Results().Len() == 1
 

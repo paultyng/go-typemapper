@@ -11,6 +11,8 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
+
+	"github.com/paultyng/go-typemapper/mapper"
 )
 
 func main() {
@@ -113,94 +115,93 @@ type generator struct {
 func (g *generator) mapFunction(f *ssa.Function) error {
 	// f.WriteTo(os.Stdout)
 
-	mapCall := findTypeMapperCreateMapCall(f)
-	if mapCall == nil {
-		return nil
-	}
-
 	if len(f.Blocks) > 1 {
 		return errors.Errorf("one block expected in mapping function, found %d", len(f.Blocks))
 	}
 
-	results := mapCall.Common().Signature().Results()
+	var (
+		m    *mapper.StructMapper
+		srcP *ssa.Parameter
+		dstP *ssa.Parameter
+		err  error
+	)
 
-	// TODO: allow for returning dst? src?
-	if results.Len() > 1 {
-		return errors.Errorf("expected zero or one function result, found %d", results.Len())
-	}
-	if results.Len() == 1 {
-		errResult := results.At(0)
-		n, ok := errResult.Type().(*types.Named)
-		if !ok {
-			return errors.Errorf("expected return type to be a *types.Named, got %T", errResult.Type())
-		}
-		if n.String() != "error" {
-			return errors.Errorf("expected return type to be an error, got %s", n.String())
-		}
-	}
-
-	block := f.Blocks[0]
-
-	src := mapCall.Common().Args[0]
-	srcI, ok := src.(ssa.Instruction)
-	if !ok {
-		return errors.Errorf("unable to convert source to instruction (%T)", src)
-	}
-
-	dst := mapCall.Common().Args[1]
-	dstI, ok := dst.(ssa.Instruction)
-	if !ok {
-		return errors.Errorf("unable to convert destination to instruction (%T)", dst)
-	}
-
-	for _, inst := range block.Instrs {
-		if inst == srcI ||
-			inst == dstI ||
-			inst == mapCall {
-			continue
-		}
+	for _, inst := range f.Blocks[0].Instrs {
 		switch inst := inst.(type) {
-		default:
-			//return errors.Errorf("unexpected instruction in function body %T", inst)
-			// ignore instruction
 		case ssa.CallInstruction:
 			if !isTypeMapperCall(inst) {
-				return errors.Errorf("unexpected call in function body %T", inst)
+				continue
 			}
-
 			callF, ok := inst.Common().Value.(*ssa.Function)
 			if !ok {
-				return errors.Errorf("unexpected typemapper call in function body %T", inst)
+				return errors.Errorf("expected *ssa.Function, got %T", inst.Common().Value)
 			}
 
+			if m == nil {
+				if callF.Name() != "CreateMap" {
+					return errors.Errorf("expected call to CreateMap, but got %s", callF.Name())
+				}
+				m, err = handleCreateMap(inst)
+				if err != nil {
+					return err
+				}
+			}
+
+			// TODO: do this via map of funcs?
 			switch callF.Name() {
 			default:
-				return errors.Errorf("unexpected typemapper call in function body %T", inst)
+				return errors.Errorf("unexpected typemapper call %s", callF.Name())
 			case "RecognizePrefixes":
-				
-			}
-		case *ssa.Return:
-			for _, res := range inst.Results {
-				switch res := res.(type) {
-				case *ssa.Const:
-					if !res.IsNil() {
-						return errors.Errorf("expected a nil return value")
-					}
+				err = handleRecognizePrefixes(m, inst)
+				if err != nil {
+					return err
+				}
+			case "MapField":
+				err = handleMapField(m, inst)
+				if err != nil {
+					return err
+				}
+			case "IgnoreFields":
+				err = handleIgnoreFields(m, inst)
+				if err != nil {
+					return err
 				}
 			}
 		}
 	}
 
+	return g.generateTypeMapping(f.Name(), f.Signature, srcP, dstP, m)
+}
+
+func handleMapField(m *mapper.StructMapper, call ssa.CallInstruction) error {
+	// TODO
+	return nil
+}
+
+func handleRecognizePrefixes(m *mapper.StructMapper, call ssa.CallInstruction) error {
+	// TODO
+	return nil
+}
+
+func handleIgnoreFields(m *mapper.StructMapper, call ssa.CallInstruction) error {
+	// TODO
+	return nil
+}
+
+func handleCreateMap(call ssa.CallInstruction) (*mapper.StructMapper, error) {
+	src := call.Common().Args[0]
 	srcP, err := param(src)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	dst := call.Common().Args[1]
 	dstP, err := param(dst)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return g.generateTypeMapping(f.Name(), f.Signature, srcP, dstP)
+	m := mapper.NewStructMapper(srcP.Type(), dstP.Type())
+	return m, nil
 }
 
 func param(v ssa.Value) (*ssa.Parameter, error) {
@@ -211,30 +212,6 @@ func param(v ssa.Value) (*ssa.Parameter, error) {
 		return param(v.X)
 	}
 	return nil, errors.Errorf("unexpected value %T %#v", v, v)
-}
-
-func findTypeMapperCreateMapCall(f *ssa.Function) ssa.CallInstruction {
-	for _, b := range f.Blocks {
-		for _, inst := range b.Instrs {
-			switch inst := inst.(type) {
-			case ssa.CallInstruction:
-				if !isTypeMapperCall(inst) {
-					continue
-				}
-
-				callF, ok := inst.Common().Value.(*ssa.Function)
-				if !ok {
-					continue
-				}
-
-				if callF.Name() != "CreateMap" {
-					continue
-				}
-				return inst
-			}
-		}
-	}
-	return nil
 }
 
 func isTypeMapperCall(inst ssa.CallInstruction) bool {
