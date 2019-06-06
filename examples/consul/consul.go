@@ -1,3 +1,3 @@
-package consul  // import "example.com/consul"
+package consul // import "example.com/consul"
 
-type Foo struct {}
+type Foo struct{}

@@ -45,14 +45,12 @@ func TestFindMatchingField(t *testing.T) {
 		{fooStringVar, types.NewStruct([]*types.Var{fooStringVar, barIntVar}, nil), types.NewStruct([]*types.Var{fooStringVar}, nil), fooStringVar},
 		{fooStringVar, types.NewStruct([]*types.Var{fooStringVar, barIntVar}, nil), types.NewStruct([]*types.Var{fooStringVar, barIntVar}, nil), fooStringVar},
 
-		// prefix tests
+		// prefix tests, both directions
 		{fooStringVar, types.NewStruct([]*types.Var{fooStringVar}, nil), types.NewStruct([]*types.Var{getFooStringVar}, nil), getFooStringVar},
 		{getFooStringVar, types.NewStruct([]*types.Var{getFooStringVar}, nil), types.NewStruct([]*types.Var{fooStringVar}, nil), fooStringVar},
 
 		// ignore tests
 		{nil, types.NewStruct([]*types.Var{ignoreIntVar}, nil), types.NewStruct([]*types.Var{ignoreIntVar}, nil), ignoreIntVar},
-
-		// explicit map tests
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			sm := NewStructMapper(c.src, c.dst)
