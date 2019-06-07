@@ -40,3 +40,7 @@ func MapFooToBar(src Foo, dst Bar) error {
     return nil
 }
 ```
+
+## TODO
+
+* [ ] Generate test file with failing unit test if not fully mapped

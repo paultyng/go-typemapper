@@ -12,14 +12,16 @@ import (
 const BuildTag = "typemapper"
 
 type Generator struct {
-	file *jen.File
+	file     *jen.File
+	testFile *jen.File
 
 	ssapkg *ssa.Package
 }
 
 func NewGenerator(ssapkg *ssa.Package, comments ...string) *Generator {
 	g := &Generator{
-		file: jen.NewFile(ssapkg.Pkg.Name()),
+		file:     jen.NewFile(ssapkg.Pkg.Name()),
+		testFile: jen.NewFile(ssapkg.Pkg.Name()),
 
 		ssapkg: ssapkg,
 	}
