@@ -101,11 +101,6 @@ func (g *Generator) MapFunction(f *ssa.Function) error {
 	return g.generateTypeMapping(f.Name(), f.Signature, src, dst, m)
 }
 
-func handleMapField(m *mapper.StructMapper, call ssa.CallInstruction) error {
-	// TODO
-	return nil
-}
-
 func walkReferrers(v ssa.Value, cb func(ssa.Instruction) bool) bool {
 	refs := v.Referrers()
 	if refs == nil {
@@ -165,10 +160,89 @@ func literalStringSlice(v ssa.Value) ([]string, error) {
 		return true
 	})
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return values, nil
+}
+
+func structType(t types.Type) (*types.Struct, error) {
+	switch t := t.(type) {
+	default:
+		return nil, errors.Errorf("unexpected type %T", t)
+	case *types.Pointer:
+		return structType(t.Elem())
+	case *types.Named:
+		return structType(t.Underlying())
+	case *types.Struct:
+		return t, nil
+	}
+}
+
+func field(v ssa.Value) (*types.Var, error) {
+	switch v := v.(type) {
+	default:
+		return nil, errors.Errorf("unexpected value type %T", v)
+	case *ssa.MakeInterface:
+		return field(v.X)
+	case *ssa.UnOp:
+		return field(v.X)
+	case *ssa.FieldAddr:
+		st, err := structType(v.X.Type())
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		return st.Field(v.Field), nil
+	}
+}
+
+func fieldInterfaceSlice(v ssa.Value) ([]*types.Var, error) {
+	sli, ok := v.(*ssa.Slice)
+	if !ok {
+		return nil, errors.Errorf("expected value of type Slice, got %T", v)
+	}
+	alloc, ok := sli.X.(*ssa.Alloc)
+	if !ok {
+		return nil, errors.Errorf("expected value of type Alloc, got %T", v)
+	}
+
+	var (
+		err    error
+		values []*types.Var
+	)
+	walkReferrers(alloc, func(inst ssa.Instruction) bool {
+		switch inst := inst.(type) {
+		case *ssa.Store:
+			var v *types.Var
+			v, err = field(inst.Val)
+			if err != nil {
+				return false
+			}
+			values = append(values, v)
+		}
+		return true
+	})
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	return values, nil
+}
+
+func handleMapField(m *mapper.StructMapper, call ssa.CallInstruction) error {
+	if argLen := len(call.Common().Args); argLen != 2 {
+		return errors.Errorf("expected 2 args for MapField, found %d", argLen)
+	}
+	srcField, err := field(call.Common().Args[0])
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	dstField, err := field(call.Common().Args[1])
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	m.MapField(srcField.Name(), dstField.Name())
+	return nil
 }
 
 func handleRecognizePrefixes(m *mapper.StructMapper, call ssa.CallInstruction) error {
@@ -184,7 +258,18 @@ func handleRecognizePrefixes(m *mapper.StructMapper, call ssa.CallInstruction) e
 }
 
 func handleIgnoreFields(m *mapper.StructMapper, call ssa.CallInstruction) error {
-	// TODO
+	if argLen := len(call.Common().Args); argLen != 1 {
+		return errors.Errorf("expected 1 arg for IgnoreFields, found %d", argLen)
+	}
+	ignores, err := fieldInterfaceSlice(call.Common().Args[0])
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	ignoreNames := make([]string, 0, len(ignores))
+	for _, ig := range ignores {
+		ignoreNames = append(ignoreNames, ig.Name())
+	}
+	m.IgnoreFields(ignoreNames...)
 	return nil
 }
 

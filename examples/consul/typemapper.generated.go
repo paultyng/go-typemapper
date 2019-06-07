@@ -12,6 +12,7 @@ func ServiceNodeToNodeService(src *structs.ServiceNode, dst *structs.NodeService
 	}
 	dst.Kind = src.ServiceKind
 	dst.ID = src.ServiceID
+	dst.Service = src.ServiceName
 	dst.Tags = src.ServiceTags
 	dst.Address = src.Address
 	dst.Meta = src.ServiceMeta
@@ -22,7 +23,5 @@ func ServiceNodeToNodeService(src *structs.ServiceNode, dst *structs.NodeService
 	dst.Proxy = src.ServiceProxy
 	dst.Connect = src.ServiceConnect
 	dst.RaftIndex = src.RaftIndex
-	// no match for "Service"
-	// no match for "LocallyRegisteredAsSidecar"
 	return
 }

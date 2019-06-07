@@ -74,8 +74,6 @@ func (m *StructMapper) fieldsMappable(src, dst *types.Var) bool {
 		}
 	}
 
-	dstNames = difference(dstNames, m.ignore)
-
 	// TODO: add options for this, casing, type conversions, etc
 
 	matchFound := func() bool {
@@ -124,7 +122,29 @@ func (m *StructMapper) Map() MapConfiguration {
 			continue
 		}
 
-		srcField := m.findPair(m.src, m.dst, dstField)
+		ignoreDst := false
+		for _, ig := range m.ignore {
+			if dstField.Name() == ig {
+				ignoreDst = true
+				break
+			}
+		}
+		if ignoreDst {
+			continue
+		}
+
+		var srcField *types.Var
+		if mm, ok := m.manualMap[dstField.Name()]; ok {
+			for i := 0; i < m.src.NumFields(); i++ {
+				f := m.src.Field(i)
+				if f.Name() == mm {
+					srcField = f
+					break
+				}
+			}
+		} else {
+			srcField = m.findPair(m.src, m.dst, dstField)
+		}
 		if srcField == nil {
 			noMatch = append(noMatch, fieldFromVar(dstField))
 			continue
