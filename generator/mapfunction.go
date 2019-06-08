@@ -13,33 +13,51 @@ import (
 	"github.com/paultyng/go-typemapper/mapper"
 )
 
-type nameAndType interface {
-	Name() string
-	Type() types.Type
+const (
+	defaultSrcName = "src"
+	defaultDstName = "dst"
+)
+
+type mappingFunc struct {
+	name string
+
+	srcName     string
+	srcType     types.Type
+	srcReceiver bool
+
+	dstName        string
+	dstType        types.Type
+	dstConstructed bool
+	dstReturned    bool
+
+	errReturned bool
+
+	prefixes   []string
+	ignores    []string
+	manualMaps map[string]string
 }
 
-type dstType struct {
-	ty types.Type
+func (mf *mappingFunc) Mapper() *mapper.StructMapper {
+	m := mapper.NewStructMapper(mf.srcType, mf.dstType)
+	if len(mf.prefixes) > 0 {
+		m = m.RecognizePrefixes(mf.prefixes...)
+	}
+	if len(mf.ignores) > 0 {
+		m = m.IgnoreFields(mf.ignores...)
+	}
+	if len(mf.manualMaps) > 0 {
+		for dst, src := range mf.manualMaps {
+			m = m.MapField(src, dst)
+		}
+	}
+	return m
 }
 
-var _ nameAndType = &dstType{}
-
-func (d *dstType) Name() string {
-	return "dst"
-}
-
-func (d *dstType) Type() types.Type {
-	return d.ty
-}
-
-func (g *Generator) MapFunction(f *ssa.Function) error {
+func (g *Generator) parseFunction(f *ssa.Function) (*mappingFunc, error) {
 	var (
-		m   *mapper.StructMapper
-		src nameAndType
-		dst nameAndType
 		err error
+		m   *mappingFunc
 	)
-
 	for _, blk := range f.Blocks {
 		for _, inst := range blk.Instrs {
 			switch inst := inst.(type) {
@@ -56,20 +74,16 @@ func (g *Generator) MapFunction(f *ssa.Function) error {
 				}
 				callF, ok := inst.Common().Value.(*ssa.Function)
 				if !ok {
-					// not a mapping function
-					return nil
-					// return errors.Errorf("expected *ssa.Function, got %T", inst.Common().Value)
+					return nil, nil
 				}
 
 				if m == nil {
 					if callF.Name() != "CreateMap" {
-						// not a mapping function
-						return nil
-						//return errors.Errorf("expected call to CreateMap, but got %s", callF.Name())
+						return nil, nil
 					}
-					m, src, dst, err = handleCreateMap(inst)
+					m, err = handleCreateMap(inst, f)
 					if err != nil {
-						return errors.WithStack(err)
+						return nil, errors.WithStack(err)
 					}
 					continue
 				}
@@ -77,28 +91,48 @@ func (g *Generator) MapFunction(f *ssa.Function) error {
 				// TODO: do this via map of funcs?
 				switch callF.Name() {
 				default:
-					return errors.Errorf("unexpected typemapper call %s", callF.Name())
+					return nil, errors.Errorf("unexpected typemapper call %s", callF.Name())
 				case "RecognizePrefixes":
 					err = handleRecognizePrefixes(m, inst)
 					if err != nil {
-						return errors.WithStack(err)
+						return nil, errors.WithStack(err)
 					}
 				case "MapField":
 					err = handleMapField(m, inst)
 					if err != nil {
-						return errors.WithStack(err)
+						return nil, errors.WithStack(err)
 					}
 				case "IgnoreFields":
 					err = handleIgnoreFields(m, inst)
 					if err != nil {
-						return errors.WithStack(err)
+						return nil, errors.WithStack(err)
 					}
 				}
 			}
 		}
 	}
 
-	return g.generateTypeMapping(f.Name(), f.Signature, src, dst, m)
+	return m, nil
+}
+
+func (g *Generator) MapFunction(f *ssa.Function) error {
+	mf, err := g.parseFunction(f)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if mf == nil {
+		return nil
+	}
+
+	if mf.srcName == "" {
+		mf.srcName = defaultSrcName
+	}
+
+	if mf.dstName == "" {
+		mf.dstName = defaultDstName
+	}
+
+	return g.generateTypeMapping(mf)
 }
 
 func walkReferrers(v ssa.Value, cb func(ssa.Instruction) bool) bool {
@@ -229,7 +263,7 @@ func fieldInterfaceSlice(v ssa.Value) ([]*types.Var, error) {
 	return values, nil
 }
 
-func handleMapField(m *mapper.StructMapper, call ssa.CallInstruction) error {
+func handleMapField(m *mappingFunc, call ssa.CallInstruction) error {
 	if argLen := len(call.Common().Args); argLen != 2 {
 		return errors.Errorf("expected 2 args for MapField, found %d", argLen)
 	}
@@ -241,11 +275,11 @@ func handleMapField(m *mapper.StructMapper, call ssa.CallInstruction) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	m.MapField(srcField.Name(), dstField.Name())
+	m.manualMaps[dstField.Name()] = srcField.Name()
 	return nil
 }
 
-func handleRecognizePrefixes(m *mapper.StructMapper, call ssa.CallInstruction) error {
+func handleRecognizePrefixes(m *mappingFunc, call ssa.CallInstruction) error {
 	if argLen := len(call.Common().Args); argLen != 1 {
 		return errors.Errorf("expected 1 arg for RecognizePrefixes, found %d", argLen)
 	}
@@ -253,11 +287,11 @@ func handleRecognizePrefixes(m *mapper.StructMapper, call ssa.CallInstruction) e
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	m.RecognizePrefixes(prefixValues...)
+	m.prefixes = append(m.prefixes, prefixValues...)
 	return nil
 }
 
-func handleIgnoreFields(m *mapper.StructMapper, call ssa.CallInstruction) error {
+func handleIgnoreFields(m *mappingFunc, call ssa.CallInstruction) error {
 	if argLen := len(call.Common().Args); argLen != 1 {
 		return errors.Errorf("expected 1 arg for IgnoreFields, found %d", argLen)
 	}
@@ -269,39 +303,73 @@ func handleIgnoreFields(m *mapper.StructMapper, call ssa.CallInstruction) error 
 	for _, ig := range ignores {
 		ignoreNames = append(ignoreNames, ig.Name())
 	}
-	m.IgnoreFields(ignoreNames...)
+	m.ignores = append(m.ignores, ignoreNames...)
 	return nil
 }
 
-func handleCreateMap(call ssa.CallInstruction) (m *mapper.StructMapper, srcP, dstP nameAndType, err error) {
-	src := call.Common().Args[0]
-	srcP, err = param(src)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	dst := call.Common().Args[1]
-	dstP, err = param(dst)
-	if err != nil {
-		return nil, nil, nil, err
+func handleCreateMap(call ssa.CallInstruction, f *ssa.Function) (*mappingFunc, error) {
+	var err error
+	m := &mappingFunc{
+		name: f.Name(),
+
+		ignores:    []string{},
+		manualMaps: map[string]string{},
+		prefixes:   []string{},
 	}
 
-	m = mapper.NewStructMapper(srcP.Type(), dstP.Type())
-	return m, srcP, dstP, nil
+	src := call.Common().Args[0]
+	m.srcName, m.srcType, _, err = param(src)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	dst := call.Common().Args[1]
+	m.dstName, m.dstType, m.dstConstructed, err = param(dst)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	if recv := f.Signature.Recv(); recv != nil {
+		// TODO: validate that its src type / name?
+		// for now just assuming if there is a receiver its the src
+		m.srcReceiver = true
+	}
+
+	results := f.Signature.Results()
+	if resultsLen := results.Len(); resultsLen > 0 {
+		last := results.At(results.Len() - 1)
+		if nm, ok := last.Type().(*types.Named); ok {
+			if nm.Obj().Name() == "error" && nm.Obj().Pkg() == nil {
+				m.errReturned = true
+				resultsLen -= 1
+			}
+		}
+
+		if resultsLen > 1 {
+			return nil, errors.Errorf("functions can only return the destination and/or an error, found %d results", results.Len())
+		}
+
+		if resultsLen == 1 {
+			// TODO: validate its the dest type
+			// for now just assuming if there is a result, its the destination
+			m.dstReturned = true
+		}
+	}
+
+	return m, nil
 }
 
-func param(v ssa.Value) (nameAndType, error) {
+func param(v ssa.Value) (name string, ty types.Type, constructed bool, err error) {
 	switch v := v.(type) {
 	case *ssa.Parameter:
-		return v, nil
+		return v.Name(), v.Type(), false, nil
 	case *ssa.MakeInterface:
 		return param(v.X)
 	case *ssa.Alloc:
 		// alloc is only possible for destination type
-		return &dstType{
-			ty: v.Type(),
-		}, nil
+		return "", v.Type(), true, nil
 	}
-	return nil, errors.Errorf("unexpected value %T %#v", v, v)
+	return "", nil, false, errors.Errorf("unexpected value %T %#v", v, v)
 }
 
 func isTypeMapperCall(inst ssa.CallInstruction) bool {
@@ -315,59 +383,82 @@ func isTypeMapperCall(inst ssa.CallInstruction) bool {
 	return true
 }
 
-func (g *Generator) generateTypeMapping(name string, sig *types.Signature, src, dst nameAndType, m *mapper.StructMapper) error {
+func (g *Generator) generateTypeMapping(mf *mappingFunc) error {
+	m := mf.Mapper()
 	mapConfig := m.Map()
 
-	// options are zero or one results, and if one, its `error`
-	isErrorResult := sig.Results().Len() == 1
+	returnsSuccess := []Code{}
 
-	returnSuccess := Return()
-	if isErrorResult {
-		returnSuccess = Return(Nil())
+	if mf.dstReturned {
+		returnsSuccess = append(returnsSuccess, Id(mf.dstName))
 	}
+	if mf.errReturned {
+		returnsSuccess = append(returnsSuccess, Nil())
+	}
+
+	returnSuccess := Return(returnsSuccess...)
 
 	body := []Code{}
 
-	if isPointer(dst.Type()) {
-		body = append(body, If(Id(dst.Name()).Op("==").Nil()).Block(
-			returnSuccess.Clone(),
-		))
+	if mf.dstConstructed {
+		body = append(body,
+			Id(mf.dstName).Op(":=").New(g.genType(unwrapPointer(mf.dstType))),
+		)
+	} else {
+		if isPointer(mf.dstType) {
+			body = append(body, If(Id(mf.dstName).Op("==").Nil()).Block(
+				returnSuccess.Clone(),
+			))
+		}
 	}
 
 	for _, p := range mapConfig.Pairs {
-		body = append(body, g.generateAssignment(src, dst, p)...)
+		body = append(body, g.generateAssignment(mf.srcName, mf.dstName, p)...)
 	}
 	for _, n := range mapConfig.NoMatch {
 		body = append(body, Commentf("no match for %q", n.Name()))
 	}
 
+	// TODO: generate unit test code
+
 	params := []Code{}
-	for i := 0; i < sig.Params().Len(); i++ {
-		p := sig.Params().At(i)
-		params = append(params, Id(p.Name()).Add(g.genType(p.Type())))
-	}
+	srcParam := Id(mf.srcName).Add(g.genType(mf.srcType))
 
 	s := g.file.Func()
-	if sig.Recv() != nil {
-		s = s.Params(Id(sig.Recv().Name()).Add(g.genType(sig.Recv().Type())))
+	if mf.srcReceiver {
+		s = s.Params(srcParam.Clone())
+	} else {
+		params = append(params, srcParam.Clone())
 	}
-	s = s.Id(name).Params(params...)
-	if isErrorResult {
+
+	if !mf.dstConstructed {
+		params = append(params, Id(mf.dstName).Add(g.genType(mf.dstType)))
+	}
+
+	s = s.Id(mf.name).Params(params...)
+
+	switch {
+	case mf.dstReturned && mf.errReturned:
+		s = s.Params(g.genType(mf.dstType), Error())
+	case mf.errReturned:
 		s = s.Error()
+	case mf.dstReturned:
+		s = s.Add(g.genType(mf.dstType))
 	}
+
 	body = append(body, returnSuccess.Clone())
 	s.Block(body...)
 	return nil
 }
 
-func (g *Generator) generateAssignment(src, dst nameAndType, p mapper.FieldPair) []Code {
-	srcExpr := Id(src.Name()).Dot(p.Source.Name())
+func (g *Generator) generateAssignment(srcName, dstName string, p mapper.FieldPair) []Code {
+	srcExpr := Id(srcName).Dot(p.Source.Name())
 	if p.Destination.IsPointer() && !p.Source.IsPointer() {
 		srcExpr = Op("&").Add(srcExpr)
 	}
 
 	return []Code{
-		Id(dst.Name()).Dot(p.Destination.Name()).Op("=").Add(srcExpr),
+		Id(dstName).Dot(p.Destination.Name()).Op("=").Add(srcExpr),
 	}
 }
 
