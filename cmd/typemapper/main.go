@@ -72,15 +72,24 @@ func mainErr() error {
 		return err
 	}
 
-	outFile, err := os.OpenFile("typemapper.generated.go", os.O_RDWR|os.O_CREATE, 0664)
-	if err != nil {
-		return err
-	}
-	defer outFile.Close()
+	for _, fileName := range g.AllFiles() {
+		fileName := fileName
+		err = func() error {
+			outFile, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0664)
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
 
-	err = g.Render(outFile)
-	if err != nil {
-		return err
+			err = g.Render(fileName, outFile)
+			if err != nil {
+				return err
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

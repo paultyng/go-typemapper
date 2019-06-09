@@ -79,12 +79,6 @@ func TestExamples(t *testing.T) {
 				t.Fatalf("%q is not a directory", c.Name())
 			}
 			pkgPath := filepath.Join(examplesPath, c.Name())
-			outFile := filepath.Join(pkgPath, "typemapper.generated.go")
-
-			expectedBytes, err := ioutil.ReadFile(outFile)
-			assert.NoError(err)
-			expected := strings.ReplaceAll(string(expectedBytes), "\r\n", "\n")
-
 			ssapkg := loadSSAPackage(t, pkgPath)
 
 			g := NewGenerator(
@@ -95,18 +89,24 @@ func TestExamples(t *testing.T) {
 			err = g.GenerateMappings()
 			assert.NoError(err)
 
-			actualBuf := &bytes.Buffer{}
-			err = g.Render(actualBuf)
-			assert.NoError(err)
-
-			if *update {
-				err = ioutil.WriteFile(outFile, actualBuf.Bytes(), 0777)
+			for _, fileName := range g.AllFiles() {
+				outFile := filepath.Join(pkgPath, fileName)
+				expectedBytes, err := ioutil.ReadFile(outFile)
 				assert.NoError(err)
-			} else {
-				actual := strings.ReplaceAll(actualBuf.String(), "\r\n", "\n")
-				assert.Equal(expected, actual)
-			}
+				expected := strings.ReplaceAll(string(expectedBytes), "\r\n", "\n")
 
+				actualBuf := &bytes.Buffer{}
+				err = g.Render(fileName, actualBuf)
+				assert.NoError(err)
+
+				if *update {
+					err = ioutil.WriteFile(outFile, actualBuf.Bytes(), 0777)
+					assert.NoError(err)
+				} else {
+					actual := strings.ReplaceAll(actualBuf.String(), "\r\n", "\n")
+					assert.Equal(expected, actual)
+				}
+			}
 		})
 	}
 }

@@ -115,7 +115,7 @@ func (g *Generator) parseFunction(f *ssa.Function) (*mappingFunc, error) {
 	return m, nil
 }
 
-func (g *Generator) MapFunction(f *ssa.Function) error {
+func (g *Generator) MapFunction(fileName string, f *ssa.Function) error {
 	mf, err := g.parseFunction(f)
 	if err != nil {
 		return errors.WithStack(err)
@@ -132,7 +132,7 @@ func (g *Generator) MapFunction(f *ssa.Function) error {
 		mf.dstName = defaultDstName
 	}
 
-	return g.generateTypeMapping(mf)
+	return g.generateTypeMapping(fileName, mf)
 }
 
 func walkReferrers(v ssa.Value, cb func(ssa.Instruction) bool) bool {
@@ -383,7 +383,7 @@ func isTypeMapperCall(inst ssa.CallInstruction) bool {
 	return true
 }
 
-func (g *Generator) generateTypeMapping(mf *mappingFunc) error {
+func (g *Generator) generateTypeMapping(fileName string, mf *mappingFunc) error {
 	m := mf.Mapper()
 	mapConfig := m.Map()
 
@@ -424,7 +424,7 @@ func (g *Generator) generateTypeMapping(mf *mappingFunc) error {
 	params := []Code{}
 	srcParam := Id(mf.srcName).Add(g.genType(mf.srcType))
 
-	s := g.file.Func()
+	s := g.file(fileName).Func()
 	if mf.srcReceiver {
 		s = s.Params(srcParam.Clone())
 	} else {
