@@ -75,7 +75,7 @@ func mainErr() error {
 	for _, fileName := range g.AllFiles() {
 		fileName := fileName
 		err = func() error {
-			outFile, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0664)
+			outFile, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0664)
 			if err != nil {
 				return err
 			}
