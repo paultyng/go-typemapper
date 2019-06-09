@@ -448,6 +448,20 @@ func (g *Generator) generateTypeMapping(fileName string, mf *mappingFunc) error 
 
 	body = append(body, returnSuccess.Clone())
 	s.Block(body...)
+
+	//generate test func
+	testBody := []Code{}
+	noMatchNames := []string{}
+	for _, n := range mapConfig.NoMatch {
+		noMatchNames = append(noMatchNames, n.Name())
+	}
+	if len(noMatchNames) > 0 {
+		testBody = append(testBody,
+			Id("t").Dot("Fatal").Params(Lit(fmt.Sprintf("no mapping for: %v", noMatchNames))),
+		)
+	}
+
+	g.testFile(fileName).Func().Id(fmt.Sprintf("Test%s", mf.name)).Params(Id("t").Op("*").Qual("testing", "T")).Block(testBody...)
 	return nil
 }
 

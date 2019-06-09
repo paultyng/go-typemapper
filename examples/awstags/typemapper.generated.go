@@ -10,6 +10,14 @@ import (
 	elbv2 "github.com/aws/aws-sdk-go/service/elbv2"
 )
 
+func ELBv2TagToEC2Tag(src *elbv2.Tag, dst *ec2.Tag) error {
+	if dst == nil {
+		return nil
+	}
+	dst.Key = src.Key
+	dst.Value = src.Value
+	return nil
+}
 func (src *myTag) DataSyncTag(dst *datasync.TagListEntry) error {
 	if dst == nil {
 		return nil
@@ -31,14 +39,6 @@ func (src *myTag) NewEC2Tag() *ec2.Tag {
 	return dst
 }
 func EC2TagToDataSyncTag(src *ec2.Tag, dst *datasync.TagListEntry) error {
-	if dst == nil {
-		return nil
-	}
-	dst.Key = src.Key
-	dst.Value = src.Value
-	return nil
-}
-func ELBv2TagToEC2Tag(src *elbv2.Tag, dst *ec2.Tag) error {
 	if dst == nil {
 		return nil
 	}
