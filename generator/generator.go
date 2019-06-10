@@ -5,6 +5,7 @@ import (
 	"go/types"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/dave/jennifer/jen"
@@ -60,6 +61,7 @@ func (g *Generator) AllFiles() []string {
 	for fileName := range g.files {
 		files = append(files, fileName)
 	}
+	sort.Strings(files)
 	return files
 }
 

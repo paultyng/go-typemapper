@@ -6,8 +6,8 @@ package awstags
 
 import "testing"
 
-func TestELBv2TagToEC2Tag(t *testing.T)    {}
 func TestDataSyncTag(t *testing.T)         {}
 func TestEC2Tag(t *testing.T)              {}
 func TestNewEC2Tag(t *testing.T)           {}
 func TestEC2TagToDataSyncTag(t *testing.T) {}
+func TestELBv2TagToEC2Tag(t *testing.T)    {}
