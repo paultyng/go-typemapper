@@ -90,10 +90,10 @@ To handle this unmapped field, you have two different approaches you can take. Y
 
 ```go
 func MapFooToBar(src Foo) Bar {
-    dst := Bar{}
+	dst := Bar{}
 	typemapper.CreateMap(src, dst)
 	typemapper.IgnoreFields(dst.Field2)
-    return dst
+	return dst
 }
 ```
 
@@ -101,10 +101,10 @@ Which would remove the comment and make the test pass. There is a field on the `
 
 ```go
 func MapFooToBar(src Foo) Bar {
-    dst := Bar{}
+	dst := Bar{}
 	typemapper.CreateMap(src, dst)
 	typemapper.MapField(src.FieldTwo, dst.Field2)
-    return dst
+	return dst
 }
 ```
 
