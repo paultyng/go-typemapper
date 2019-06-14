@@ -5,13 +5,13 @@ import (
 )
 
 type Foo struct {
-    FieldOne string
-    FieldTwo int
+	FieldOne string
+	FieldTwo int
 }
 
 type Bar struct {
-    FieldOne string
-    Field2 int
+	FieldOne string
+	Field2   int
 }
 
 func main() {
