@@ -1,0 +1,27 @@
+project_name: typemapper
+before:
+  hooks:
+    - go mod download
+builds:
+- main: ./cmd/typemapper
+  goos:
+    - windows
+    - linux
+    - darwin
+  goarch:
+    - amd64
+    - 386
+  ignore:
+    - goos: darwin
+      goarch: 386
+  env:
+    - CGO_ENABLED=0
+archives:
+  - replacements:
+      386: i386
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ .Tag }}-next"
+changelog:
+  skip: true
