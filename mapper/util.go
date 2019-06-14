@@ -18,16 +18,19 @@ func unwrapStruct(v types.Type) *types.Struct {
 	if v == nil {
 		return nil
 	}
-	v = unwrapPointer(v)
-	named, ok := v.(*types.Named)
-	if !ok {
+	var unwrap func(v types.Type) *types.Struct
+	unwrap = func(v types.Type) *types.Struct {
+		switch v := v.(type) {
+		case *types.Pointer:
+			return unwrap(v.Elem())
+		case *types.Named:
+			return unwrap(v.Underlying())
+		case *types.Struct:
+			return v
+		}
 		return nil
 	}
-	s, ok := named.Underlying().(*types.Struct)
-	if !ok {
-		return nil
-	}
-	return s
+	return unwrap(v)
 }
 
 // difference returns the elements in `a` that aren't in `b`.

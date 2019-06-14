@@ -46,20 +46,21 @@ func (m *StructMapper) IgnoreFields(dstFields ...string) *StructMapper {
 }
 
 func (m *StructMapper) typesMappable(src, dst types.Type) bool {
-	if types.AssignableTo(src, dst) {
-		return true
+	var unwrap func(types.Type) types.Type
+	unwrap = func(t types.Type) types.Type {
+		switch t := t.(type) {
+		case *types.Pointer:
+			return unwrap(t.Elem())
+		case *types.Named:
+			return unwrap(t.Underlying())
+		}
+		return t
 	}
 
-	// int => string? etc... probably need an explicit listing of valid options
-	// if types.ConvertibleTo(src, dst) {
-	// 	return true
-	// }
+	src = unwrap(src)
+	dst = unwrap(dst)
 
-	if dstP, ok := dst.(*types.Pointer); ok {
-		return m.typesMappable(src, dstP.Elem())
-	}
-
-	return false
+	return types.AssignableTo(src, dst)
 }
 
 func (m *StructMapper) fieldsMappable(src, dst *types.Var) bool {
