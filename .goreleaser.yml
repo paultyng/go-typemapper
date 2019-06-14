@@ -19,6 +19,13 @@ builds:
 archives:
   - replacements:
       386: i386
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+      - TUTORIAL.md
 checksum:
   name_template: 'checksums.txt'
 snapshot:
