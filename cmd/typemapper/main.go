@@ -24,7 +24,7 @@ func main() {
 func mainErr() error {
 	cfg := &packages.Config{
 		Mode:       packages.LoadSyntax,
-		BuildFlags: []string{"-tags", generator.BuildTag},
+		BuildFlags: []string{"-tags", generator.BuildTag, "-a"},
 		Tests:      false,
 	}
 	pkgs, err := packages.Load(cfg, "./")

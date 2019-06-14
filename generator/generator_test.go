@@ -23,7 +23,7 @@ func loadSSAPackage(t *testing.T, path string) *ssa.Package {
 	cfg := &packages.Config{
 		Dir:        path,
 		Mode:       packages.LoadSyntax,
-		BuildFlags: []string{"-tags", BuildTag},
+		BuildFlags: []string{"-tags", BuildTag, "-a"},
 		Tests:      false,
 	}
 	pkgs, err := packages.Load(cfg, "./")
