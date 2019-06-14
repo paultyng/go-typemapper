@@ -11,7 +11,7 @@ func ServiceNodeToNodeService(src *structs.ServiceNode, dst *structs.NodeService
 		return
 	}
 	dst.Kind = src.ServiceKind
-	dst.ID = src.ServiceID
+	dst.ID = string(src.ID)
 	dst.Service = src.ServiceName
 	dst.Tags = src.ServiceTags
 	dst.Address = src.Address

@@ -11,23 +11,21 @@ type FieldPair struct {
 
 type Field struct {
 	key string
-	ptr bool
+	ty  types.Type
 }
 
 func (f *Field) Name() string {
 	return f.key
 }
 
-// TODO: should expose typing information differently
-func (f *Field) IsPointer() bool {
-	return f.ptr
+func (f *Field) Type() types.Type {
+	return f.ty
 }
 
 func fieldFromVar(v *types.Var) Field {
-	_, ptr := v.Type().(*types.Pointer)
 	return Field{
 		key: v.Name(),
-		ptr: ptr,
+		ty:  v.Type(),
 	}
 }
 

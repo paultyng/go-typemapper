@@ -5,44 +5,75 @@
 package awstags
 
 import (
+	acm "github.com/aws/aws-sdk-go/service/acm"
 	datasync "github.com/aws/aws-sdk-go/service/datasync"
+	directoryservice "github.com/aws/aws-sdk-go/service/directoryservice"
 	ec2 "github.com/aws/aws-sdk-go/service/ec2"
 	elbv2 "github.com/aws/aws-sdk-go/service/elbv2"
 )
 
-func (src *myTag) DataSyncTag(dst *datasync.TagListEntry) error {
-	if dst == nil {
-		return nil
+func (src *tag) ACMTag() *acm.Tag {
+	dst := new(acm.Tag)
+	dst.Key = &src.Key
+	dst.Value = &src.Value
+	return dst
+}
+func (src tags) ACMTags() []*acm.Tag {
+	var dst []*acm.Tag
+	for _, x := range src {
+		dst = append(dst, x.ACMTag())
 	}
+	return dst
+}
+func (src *tag) DataSyncTag() *datasync.TagListEntry {
+	dst := new(datasync.TagListEntry)
 	dst.Key = &src.Key
 	dst.Value = &src.Value
-	return nil
+	return dst
 }
-func (src *myTag) EC2Tag() (*ec2.Tag, error) {
-	dst := new(ec2.Tag)
+func (src tags) DataSyncTags() []*datasync.TagListEntry {
+	var dst []*datasync.TagListEntry
+	for _, x := range src {
+		dst = append(dst, x.DataSyncTag())
+	}
+	return dst
+}
+func (src *tag) DirectoryServiceTag() *directoryservice.Tag {
+	dst := new(directoryservice.Tag)
 	dst.Key = &src.Key
 	dst.Value = &src.Value
-	return dst, nil
+	return dst
 }
-func (src *myTag) NewEC2Tag() *ec2.Tag {
+func (src tags) DirectoryServiceTags() []*directoryservice.Tag {
+	var dst []*directoryservice.Tag
+	for _, x := range src {
+		dst = append(dst, x.DirectoryServiceTag())
+	}
+	return dst
+}
+func (src *tag) EC2Tag() *ec2.Tag {
 	dst := new(ec2.Tag)
 	dst.Key = &src.Key
 	dst.Value = &src.Value
 	return dst
 }
-func EC2TagToDataSyncTag(src *ec2.Tag, dst *datasync.TagListEntry) error {
-	if dst == nil {
-		return nil
+func (src tags) EC2Tags() []*ec2.Tag {
+	var dst []*ec2.Tag
+	for _, x := range src {
+		dst = append(dst, x.EC2Tag())
 	}
-	dst.Key = src.Key
-	dst.Value = src.Value
-	return nil
+	return dst
 }
-func ELBv2TagToEC2Tag(src *elbv2.Tag, dst *ec2.Tag) error {
-	if dst == nil {
-		return nil
+func (src *tag) ELBV2Tag() *elbv2.Tag {
+	dst := new(elbv2.Tag)
+	dst.Key = &src.Key
+	dst.Value = &src.Value
+	return dst
+}
+func (src tags) ELBV2Tags() []*elbv2.Tag {
+	var dst []*elbv2.Tag
+	for _, x := range src {
+		dst = append(dst, x.ELBV2Tag())
 	}
-	dst.Key = src.Key
-	dst.Value = src.Value
-	return nil
+	return dst
 }

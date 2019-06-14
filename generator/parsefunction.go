@@ -1,61 +1,16 @@
 package generator
 
 import (
-	"fmt"
+	"go/token"
 	"go/types"
 	"strconv"
 	"strings"
-	"go/token"
 
-	. "github.com/dave/jennifer/jen"
 	"github.com/pkg/errors"
 	"golang.org/x/tools/go/ssa"
-
-	"github.com/paultyng/go-typemapper/mapper"
 )
-
-const (
-	defaultSrcName = "src"
-	defaultDstName = "dst"
-)
-
-type mappingFunc struct {
-	name string
-
-	srcName     string
-	srcType     types.Type
-	srcReceiver bool
-
-	dstName        string
-	dstType        types.Type
-	dstConstructed bool
-	dstReturned    bool
-
-	errReturned bool
-
-	prefixes   []string
-	ignores    []string
-	manualMaps map[string]string
-}
-
-func (mf *mappingFunc) Mapper() *mapper.StructMapper {
-	m := mapper.NewStructMapper(mf.srcType, mf.dstType)
-	if len(mf.prefixes) > 0 {
-		m = m.RecognizePrefixes(mf.prefixes...)
-	}
-	if len(mf.ignores) > 0 {
-		m = m.IgnoreFields(mf.ignores...)
-	}
-	if len(mf.manualMaps) > 0 {
-		for dst, src := range mf.manualMaps {
-			m = m.MapField(src, dst)
-		}
-	}
-	return m
-}
 
 func (g *Generator) parseFunction(f *ssa.Function) (*mappingFunc, error) {
-	// TODO: split this to its own file
 	var (
 		err error
 		m   *mappingFunc
@@ -109,37 +64,28 @@ func (g *Generator) parseFunction(f *ssa.Function) (*mappingFunc, error) {
 					if err != nil {
 						return nil, errors.WithStack(err)
 					}
+				case "MapWith":
+					err = handleMapWith(m, inst)
+					if err != nil {
+						return nil, errors.WithStack(err)
+					}
 				}
 			}
 		}
 	}
+	if m == nil {
+		return nil, nil
+	}
 
 	//validations
-	if _, ok := m.dstType.(*types.Pointer); !ok && !m.dstConstructed {
+	_, dstPointer := m.dstType.(*types.Pointer)
+	_, dstSlice := m.dstType.(*types.Slice)
+	_, dstMap := m.dstType.(*types.Map)
+	if !(dstPointer || dstSlice || dstMap) && !m.dstConstructed {
 		return nil, errors.Errorf("non-pointer destination types cannot be passed as parameters")
 	}
 
 	return m, nil
-}
-
-func (g *Generator) MapFunction(fileName string, f *ssa.Function) error {
-	mf, err := g.parseFunction(f)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	if mf == nil {
-		return nil
-	}
-
-	if mf.srcName == "" {
-		mf.srcName = defaultSrcName
-	}
-
-	if mf.dstName == "" {
-		mf.dstName = defaultDstName
-	}
-
-	return g.generateTypeMapping(fileName, mf)
 }
 
 func walkReferrers(v ssa.Value, cb func(ssa.Instruction) bool) bool {
@@ -220,10 +166,39 @@ func structType(t types.Type) (*types.Struct, error) {
 	}
 }
 
+func call(v ssa.Value) (*ssa.Call, error) {
+	switch v := v.(type) {
+	default:
+		return nil, errors.Errorf("unexpected call value type %T %#v", v, v)
+	case *ssa.MakeInterface:
+		return call(v.X)
+	case *ssa.MakeClosure:
+		fn, ok := v.Fn.(*ssa.Function)
+		if !ok {
+			return nil, errors.Errorf("unexpected closure Fn type %T %#v", v.Fn, v.Fn)
+		}
+		// TODO: only do this for "bound method wrapper for %s"?
+		// https://github.com/golang/tools/blob/149740340b5f650cf618fb4e02716f04efac92bb/go/ssa/wrappers.go#L182
+
+		// find first Call
+		for _, blk := range fn.Blocks {
+			for _, inst := range blk.Instrs {
+				switch inst := inst.(type) {
+				case *ssa.Call:
+					return inst, nil
+				}
+
+			}
+		}
+
+		return nil, errors.Errorf("unable to find call in closure")
+	}
+}
+
 func field(v ssa.Value) (*types.Var, error) {
 	switch v := v.(type) {
 	default:
-		return nil, errors.Errorf("unexpected value type %T", v)
+		return nil, errors.Errorf("unexpected field value type %T %#v", v, v)
 	case *ssa.MakeInterface:
 		return field(v.X)
 	case *ssa.UnOp:
@@ -235,6 +210,39 @@ func field(v ssa.Value) (*types.Var, error) {
 		}
 		return st.Field(v.Field), nil
 	}
+}
+
+func callInterfaceSlice(v ssa.Value) ([]*ssa.Call, error) {
+	sli, ok := v.(*ssa.Slice)
+	if !ok {
+		return nil, errors.Errorf("expected value of type Slice, got %T", v)
+	}
+	alloc, ok := sli.X.(*ssa.Alloc)
+	if !ok {
+		return nil, errors.Errorf("expected value of type Alloc, got %T", v)
+	}
+
+	var (
+		err    error
+		values []*ssa.Call
+	)
+	walkReferrers(alloc, func(inst ssa.Instruction) bool {
+		switch inst := inst.(type) {
+		case *ssa.Store:
+			var c *ssa.Call
+			c, err = call(inst.Val)
+			if err != nil {
+				return false
+			}
+			values = append(values, c)
+		}
+		return true
+	})
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	return values, nil
 }
 
 func fieldInterfaceSlice(v ssa.Value) ([]*types.Var, error) {
@@ -286,6 +294,20 @@ func handleMapField(m *mappingFunc, call ssa.CallInstruction) error {
 	return nil
 }
 
+func handleMapWith(m *mappingFunc, call ssa.CallInstruction) error {
+	if argLen := len(call.Common().Args); argLen != 1 {
+		return errors.Errorf("expected 1 arg for MapWith, found %d", argLen)
+	}
+	calls, err := callInterfaceSlice(call.Common().Args[0])
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	for _, c := range calls {
+		m.mapWith = append(m.mapWith, c.Call.StaticCallee())
+	}
+	return nil
+}
+
 func handleRecognizePrefixes(m *mappingFunc, call ssa.CallInstruction) error {
 	if argLen := len(call.Common().Args); argLen != 1 {
 		return errors.Errorf("expected 1 arg for RecognizePrefixes, found %d", argLen)
@@ -317,11 +339,13 @@ func handleIgnoreFields(m *mappingFunc, call ssa.CallInstruction) error {
 func handleCreateMap(call ssa.CallInstruction, f *ssa.Function) (*mappingFunc, error) {
 	var err error
 	m := &mappingFunc{
+		fn:   f,
 		name: f.Name(),
 
 		ignores:    []string{},
 		manualMaps: map[string]string{},
 		prefixes:   []string{},
+		mapWith:    []*ssa.Function{},
 	}
 
 	src := call.Common().Args[0]
@@ -334,6 +358,9 @@ func handleCreateMap(call ssa.CallInstruction, f *ssa.Function) (*mappingFunc, e
 	m.dstName, m.dstType, m.dstConstructed, err = param(call, dst)
 	if err != nil {
 		return nil, errors.WithStack(err)
+	}
+	if m.dstType == nil {
+		return nil, errors.Errorf("unable to determine destination type, %T %#v", dst, dst)
 	}
 
 	if recv := f.Signature.Recv(); recv != nil {
@@ -368,6 +395,8 @@ func handleCreateMap(call ssa.CallInstruction, f *ssa.Function) (*mappingFunc, e
 
 func param(call ssa.CallInstruction, v ssa.Value) (name string, ty types.Type, constructed bool, err error) {
 	switch v := v.(type) {
+	case *ssa.Const:
+		return "", v.Type(), true, nil
 	case *ssa.UnOp:
 		if v.Op == token.MUL {
 			name, ty, constructed, err = param(call, v.X)
@@ -381,7 +410,7 @@ func param(call ssa.CallInstruction, v ssa.Value) (name string, ty types.Type, c
 	case *ssa.MakeInterface:
 		return param(call, v.X)
 	case *ssa.Alloc:
-		for _, ref := range (*v.Referrers()) {
+		for _, ref := range *v.Referrers() {
 			if ref == call {
 				continue
 			}
@@ -406,119 +435,4 @@ func isTypeMapperCall(inst ssa.CallInstruction) bool {
 		return false
 	}
 	return true
-}
-
-func (g *Generator) generateTypeMapping(fileName string, mf *mappingFunc) error {
-	m := mf.Mapper()
-	mapConfig := m.Map()
-
-	returnsSuccess := []Code{}
-
-	if mf.dstReturned {
-		returnsSuccess = append(returnsSuccess, Id(mf.dstName))
-	}
-	if mf.errReturned {
-		returnsSuccess = append(returnsSuccess, Nil())
-	}
-
-	returnSuccess := Return(returnsSuccess...)
-
-	body := []Code{}
-
-	switch {
-	case mf.dstConstructed && isPointer(mf.dstType):
-		// construct with `new`
-		body = append(body,
-			Id(mf.dstName).Op(":=").New(g.genType(unwrapPointer(mf.dstType))),
-		)
-	case mf.dstConstructed:
-		// constructed but not a pointer type (no `new`)
-		body = append(body,
-			Id(mf.dstName).Op(":=").Add(g.genType(mf.dstType)).Values(),
-		)
-	case isPointer(mf.dstType):
-		// pointer but not constructed
-		body = append(body, If(Id(mf.dstName).Op("==").Nil()).Block(
-			returnSuccess.Clone(),
-		))
-	}
-
-	for _, p := range mapConfig.Pairs {
-		body = append(body, g.generateAssignment(mf.srcName, mf.dstName, p)...)
-	}
-	for _, n := range mapConfig.NoMatch {
-		body = append(body, Commentf("no match for %q", n.Name()))
-	}
-
-	// TODO: generate unit test code
-
-	params := []Code{}
-	srcParam := Id(mf.srcName).Add(g.genType(mf.srcType))
-
-	s := g.file(fileName).Func()
-	if mf.srcReceiver {
-		s = s.Params(srcParam.Clone())
-	} else {
-		params = append(params, srcParam.Clone())
-	}
-
-	if !mf.dstConstructed {
-		params = append(params, Id(mf.dstName).Add(g.genType(mf.dstType)))
-	}
-
-	s = s.Id(mf.name).Params(params...)
-
-	switch {
-	case mf.dstReturned && mf.errReturned:
-		s = s.Params(g.genType(mf.dstType), Error())
-	case mf.errReturned:
-		s = s.Error()
-	case mf.dstReturned:
-		s = s.Add(g.genType(mf.dstType))
-	}
-
-	body = append(body, returnSuccess.Clone())
-	s.Block(body...)
-
-	//generate test func
-	testBody := []Code{}
-	noMatchNames := []string{}
-	for _, n := range mapConfig.NoMatch {
-		noMatchNames = append(noMatchNames, n.Name())
-	}
-	if len(noMatchNames) > 0 {
-		testBody = append(testBody,
-			Id("t").Dot("Fatal").Params(Lit(fmt.Sprintf("no mapping for: %v", noMatchNames))),
-		)
-	}
-
-	g.testFile(fileName).Func().Id(fmt.Sprintf("Test%s", mf.name)).Params(Id("t").Op("*").Qual("testing", "T")).Block(testBody...)
-	return nil
-}
-
-func (g *Generator) generateAssignment(srcName, dstName string, p mapper.FieldPair) []Code {
-	srcExpr := Id(srcName).Dot(p.Source.Name())
-	if p.Destination.IsPointer() && !p.Source.IsPointer() {
-		srcExpr = Op("&").Add(srcExpr)
-	}
-
-	return []Code{
-		Id(dstName).Dot(p.Destination.Name()).Op("=").Add(srcExpr),
-	}
-}
-
-func (g *Generator) genType(ty types.Type) *Statement {
-	switch ty := ty.(type) {
-	default:
-		fmt.Printf("%T %#v\n", ty, ty)
-	case *types.Pointer:
-		return Op("*").Add(g.genType(ty.Elem()))
-	case *types.Named:
-		if ty.Obj().Pkg() == g.ssapkg.Pkg {
-			return Id(ty.Obj().Name())
-		}
-		return Qual(ty.Obj().Pkg().Path(), ty.Obj().Name())
-	}
-
-	panic("?")
 }

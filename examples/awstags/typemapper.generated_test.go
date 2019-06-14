@@ -6,8 +6,13 @@ package awstags
 
 import "testing"
 
-func TestDataSyncTag(t *testing.T)         {}
-func TestEC2Tag(t *testing.T)              {}
-func TestNewEC2Tag(t *testing.T)           {}
-func TestEC2TagToDataSyncTag(t *testing.T) {}
-func TestELBv2TagToEC2Tag(t *testing.T)    {}
+func TestACMTag(t *testing.T)               {}
+func TestACMTags(t *testing.T)              {}
+func TestDataSyncTag(t *testing.T)          {}
+func TestDataSyncTags(t *testing.T)         {}
+func TestDirectoryServiceTag(t *testing.T)  {}
+func TestDirectoryServiceTags(t *testing.T) {}
+func TestEC2Tag(t *testing.T)               {}
+func TestEC2Tags(t *testing.T)              {}
+func TestELBV2Tag(t *testing.T)             {}
+func TestELBV2Tags(t *testing.T)            {}
