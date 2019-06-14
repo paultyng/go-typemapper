@@ -20,6 +20,10 @@ func NewStructMapper(src, dst types.Type) *StructMapper {
 	m.src = unwrapStruct(src)
 	m.dst = unwrapStruct(dst)
 
+	if m.src == nil || m.dst == nil {
+		return nil
+	}
+
 	return m
 }
 
